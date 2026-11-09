@@ -1,23 +1,23 @@
 # =====================================================
-#  BOT VINTED -> DISCORD  (version GitHub Actions)
+#  BOT VINTED -> DISCORD  (version GitHub Actions v2)
 # =====================================================
 import os
 import json
 import time
 import requests
+from vinted_scraper import VintedWrapper
 
 # =====================================================
 #  ✏️ TES RÉGLAGES : MODIFIE UNIQUEMENT CETTE PARTIE
 # =====================================================
 
-# 👉 LA MARQUE : écris son nom entre guillemets.
-# Une seule marque :   MARQUES = ["Nike"]
-# Plusieurs marques :  MARQUES = ["Nike", "Adidas", "Levi's"]
-# Toutes les marques : MARQUES = []
+# 👉 LA MARQUE (écris-la entre guillemets)
+# Une marque :   MARQUES = ["Montbell"]
+# Plusieurs :    MARQUES = ["Nike", "Adidas"]
+# Toutes :       MARQUES = []
 MARQUES = ["Montbell"]
 
-# Mot en plus pour préciser (facultatif). Exemples : "air max", "veste"
-# Laisse "" (vide) pour avoir TOUS les articles de la marque.
+# Mot en plus pour préciser (facultatif). "" = tous les articles.
 MOTS_CLES = ""
 
 # Prix maximum en euros (0 = pas de limite)
@@ -27,13 +27,12 @@ PRIX_MAX = 120
 PRIX_MIN = 0
 
 # Tailles acceptées. [] = toutes. Exemples : ["M", "L"] ou ["42"]
-TAILLES = ["M"]
+TAILLES = []
 
-# Pays de Vinted : "www.vinted.fr", "www.vinted.be", etc.
-DOMAINE = "www.vinted.fr"
+# Pays de Vinted : "https://www.vinted.fr", "https://www.vinted.be"...
+SITE = "https://www.vinted.fr"
 
 # True = au tout premier lancement, envoie 3 articles pour TESTER.
-# Quand tu as reçu les 3 messages, passe à False.
 TESTER_AU_DEMARRAGE = True
 
 # =====================================================
@@ -44,22 +43,8 @@ WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
 FICHIER_MEMOIRE = "seen.json"
 
 
-def nouvelle_session():
-    """Fait semblant d'être un navigateur pour que Vinted réponde."""
-    s = requests.Session()
-    s.headers.update({
-        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) "
-                       "Chrome/124.0 Safari/537.36"),
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "fr-FR,fr;q=0.9",
-    })
-    s.get(f"https://{DOMAINE}", timeout=20)
-    return s
-
-
-def chercher(session, texte):
-    """Cherche un texte sur Vinted, du plus récent au plus ancien."""
+def chercher(vinted, texte):
+    """Demande à Vinted les articles les plus récents."""
     params = {
         "search_text": texte,
         "order": "newest_first",
@@ -70,26 +55,10 @@ def chercher(session, texte):
         params["price_to"] = PRIX_MAX
     if PRIX_MIN:
         params["price_from"] = PRIX_MIN
-    r = session.get(f"https://{DOMAINE}/api/v2/catalog/items",
-                    params=params, timeout=20)
-    r.raise_for_status()
-    return r.json().get("items", [])
-
-
-def chercher_tout(session):
-    """Fait une recherche par marque et rassemble les résultats."""
-    if not MARQUES:
-        return chercher(session, MOTS_CLES)
-
-    resultats = {}
-    for marque in MARQUES:
-        texte = f"{marque} {MOTS_CLES}".strip()
-        for a in chercher(session, texte):
-            if marque_ok(a):  # garde seulement la VRAIE marque
-                resultats[a["id"]] = a
-        time.sleep(2)  # petite pause entre deux marques
-    # Du plus récent au plus ancien (les numéros les plus grands = les plus récents)
-    return sorted(resultats.values(), key=lambda x: x["id"], reverse=True)
+    reponse = vinted.search(params)
+    if isinstance(reponse, dict):
+        return reponse.get("items", [])
+    return reponse or []
 
 
 def marque_ok(a):
@@ -97,6 +66,19 @@ def marque_ok(a):
         return True
     marque = str(a.get("brand_title", "")).strip().lower()
     return marque in [m.strip().lower() for m in MARQUES]
+
+
+def chercher_tout(vinted):
+    if not MARQUES:
+        return chercher(vinted, MOTS_CLES)
+    resultats = {}
+    for marque in MARQUES:
+        texte = f"{marque} {MOTS_CLES}".strip()
+        for a in chercher(vinted, texte):
+            if marque_ok(a):
+                resultats[a["id"]] = a
+        time.sleep(2)
+    return sorted(resultats.values(), key=lambda x: x["id"], reverse=True)
 
 
 def taille_ok(a):
@@ -117,7 +99,9 @@ def envoyer_discord(a):
     prix = lire_prix(a)
     taille = a.get("size_title") or "Non précisée"
     marque = a.get("brand_title") or "Non précisée"
-    lien = a.get("url") or f"https://{DOMAINE}/items/{a.get('id')}"
+    lien = a.get("url") or f"{SITE}/items/{a.get('id')}"
+    if lien.startswith("/"):
+        lien = SITE + lien
     photo = (a.get("photo") or {}).get("url")
 
     donnees = {
@@ -154,8 +138,12 @@ def main():
         with open(FICHIER_MEMOIRE) as f:
             deja_vus = json.load(f)
 
-    articles = chercher_tout(nouvelle_session())
+    vinted = VintedWrapper(SITE)
+    articles = chercher_tout(vinted)
     print(f"🔎 {len(articles)} articles trouvés")
+    if articles:
+        # Aide au dépannage : montre les champs reçus de Vinted
+        print("Champs du 1er article :", sorted(articles[0].keys()))
 
     if premier_lancement:
         if TESTER_AU_DEMARRAGE:
@@ -163,7 +151,7 @@ def main():
                 envoyer_discord(a)
         deja_vus = [a["id"] for a in articles]
     else:
-        for a in reversed(articles):  # du plus ancien au plus récent
+        for a in reversed(articles):
             if a["id"] not in deja_vus:
                 deja_vus.append(a["id"])
                 if taille_ok(a):
@@ -176,3 +164,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
