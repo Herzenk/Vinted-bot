@@ -24,7 +24,8 @@ jobs:
           python-version: "3.12"
 
       - name: Installer requests
-        run: pip install requests
+        run: pip install requests vinted-scraper
+
 
       - name: Lancer le bot
         run: python bot.py
