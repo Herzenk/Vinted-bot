@@ -27,13 +27,13 @@ PRIX_MAX = 120
 PRIX_MIN = 0
 
 # Tailles acceptées. [] = toutes. Exemples : ["M", "L"] ou ["42"]
-TAILLES = []
+TAILLES = ["M"]
 
 # Pays de Vinted : "https://www.vinted.fr", "https://www.vinted.be"...
 SITE = "https://www.vinted.fr"
 
 # True = au tout premier lancement, envoie 3 articles pour TESTER.
-TESTER_AU_DEMARRAGE = True
+TESTER_AU_DEMARRAGE = False
 
 # =====================================================
 #  🛠️ LE RESTE : PAS BESOIN DE TOUCHER
