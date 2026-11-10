@@ -33,7 +33,7 @@ TAILLES = []
 SITE = "https://www.vinted.fr"
 
 # True = au tout premier lancement, envoie 3 articles pour TESTER.
-TESTER_AU_DEMARRAGE = True
+TESTER_AU_DEMARRAGE = False
 
 # =====================================================
 #  🛠️ LE RESTE : PAS BESOIN DE TOUCHER
